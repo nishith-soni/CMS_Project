@@ -1,0 +1,90 @@
+# Root .gitignore for CMS Project (backend + frontend)
+
+# Node modules
+**/node_modules/
+
+dist/
+build/
+# Build outputs
+dist/
+build/
+coverage/
+.vite/
+.rollup.cache/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# tsbuild info placed by local configs (sometimes under node_modules/.tmp)
+**/.tmp/*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Application logs
+logs/
+*.log
+
+# Environment files (do NOT commit secrets)
+.env
+.env.*
+
+# Frontend and backend local envs
+/backend/.env*
+/frontend/.env*
+
+# Prisma client & local DB files
+**/.prisma/
+prisma/dev.db
+
+# Prisma generated client
+node_modules/.prisma
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+docker-compose.*.local.yml
+
+# Docker volumes / compose local state
+/docker-compose.override.yml
+/docker/**/*.local.yml
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+
+# Misc
+*.log
+*.local
+
+# Frontend caches and artifacts
+dist/
+.cache/
+
+# Vite / rolldown output
+/frontend/dist/
+/frontend/.vite/
+/frontend/.cache/
+
+# Ignore editor temp files
+*~
+*.swp
+
+# Optional: lockfile should be committed (don't ignore package-lock.json / yarn.lock)
+
+# End of .gitignore

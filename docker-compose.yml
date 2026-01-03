@@ -1,0 +1,70 @@
+# Docker Compose for CMS Project
+# ================================
+# WHY: Defines all services (database, etc.) needed for development
+# This ensures everyone on the team has the same setup
+
+services:
+  # PostgreSQL Database
+  # ====================
+  # WHY PostgreSQL: 
+  # - Reliable, powerful relational database
+  # - Great for complex queries (CRM, ERP need this)
+  # - Excellent Prisma support
+  # - Industry standard for production apps
+  postgres:
+    image: postgres:16-alpine  # Alpine = smaller image size
+    container_name: cms_postgres
+    restart: unless-stopped    # Auto-restart if it crashes
+    
+    # Environment variables for database setup
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cms_database
+    
+    # Port mapping: host:container
+    # Access database at localhost:5433 (5432 is used by local PostgreSQL)
+    ports:
+      - "5433:5432"
+    
+    # Persist data even if container is removed
+    # WHY: Without this, you'd lose all data when container stops
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    
+    # Health check to ensure database is ready
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cms_database"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # pgAdmin - Database GUI (Optional but helpful)
+  # ==============================================
+  # WHY: Visual interface to browse tables, run queries
+  # Access at http://localhost:5050
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: cms_pgadmin
+    restart: unless-stopped
+    
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@cms.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'  # Desktop mode
+    
+    ports:
+      - "5050:80"
+    
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+# Named volumes for data persistence
+# WHY: Data survives container restarts/rebuilds
+volumes:
+  postgres_data:
+  pgadmin_data:

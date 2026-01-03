@@ -1,0 +1,549 @@
+// ===========================================
+// Prisma Schema - Database Model Definitions
+// ===========================================
+// 
+// WHY PRISMA?
+// - Type-safe database queries (no SQL injection, autocomplete in IDE)
+// - Auto-generated TypeScript types from your schema
+// - Easy migrations (version control for your database)
+// - Prisma Studio for visual data management
+//
+// HOW IT WORKS:
+// 1. Define your models here (tables in database)
+// 2. Run `npx prisma migrate dev` to create tables
+// 3. Run `npx prisma generate` to create TypeScript client
+// 4. Use PrismaClient in your code for type-safe queries
+
+// Generator: Creates the Prisma Client
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+// Datasource: Database connection
+datasource db {
+  provider = "postgresql"
+}
+
+// ===========================================
+// CORE MODULE - Authentication & Users
+// ===========================================
+
+// User Roles Enum
+// WHY ENUM: Restricts role values to predefined options, prevents typos
+enum Role {
+  SUPER_ADMIN  // Full system access
+  ADMIN        // Manage content and users
+  EDITOR       // Edit content, cannot publish
+  AUTHOR       // Create own content only
+  USER         // Basic access
+}
+
+// User Model
+// This is the main authentication table
+model User {
+  id        String   @id @default(uuid())  // UUID is better than auto-increment for security
+  email     String   @unique               // Login identifier
+  password  String                         // Hashed password (never store plain text!)
+  firstName String   @map("first_name")    // @map: Use snake_case in DB, camelCase in code
+  lastName  String   @map("last_name")
+  avatar    String?                        // ? means optional/nullable
+  role      Role     @default(USER)        // Default role for new users
+  isActive  Boolean  @default(true) @map("is_active")
+  
+  // Timestamps - track when records are created/updated
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")     // Auto-updates on save
+  
+  // Relations - Links to other tables
+  posts       Post[]          // User can have many posts (CMS)
+  contacts    Contact[]       // User can manage contacts (CRM)
+  leads       Lead[]          // User can manage leads (CRM)
+  deals       Deal[]          // User can manage deals (CRM)
+  activities  Activity[]      // User's activities
+  salesOrders SalesOrder[]    // User's sales orders (ERP)
+  auditLogs   AuditLog[]      // Track user actions
+  
+  @@map("users")  // Table name in database (plural, snake_case)
+}
+
+// Refresh Token - For JWT refresh token storage
+// WHY: Allows secure token refresh without re-login
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@map("refresh_tokens")
+}
+
+// ===========================================
+// CMS MODULE - Content Management
+// ===========================================
+
+// Post Status - Draft, Published, etc.
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+// Category - Organize posts into categories
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique    // URL-friendly name (e.g., "tech-news")
+  description String?
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  posts       Post[]   // Category has many posts
+  
+  @@map("categories")
+}
+
+// Tag - Additional post classification
+model Tag {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  posts     Post[]   // Many-to-many via implicit relation
+  
+  @@map("tags")
+}
+
+// Post - Blog posts/articles
+model Post {
+  id          String     @id @default(uuid())
+  title       String
+  slug        String     @unique    // URL-friendly title
+  content     String     @db.Text   // @db.Text for long content
+  excerpt     String?               // Short summary
+  
+  // SEO Fields - Important for search engines
+  metaTitle       String?  @map("meta_title")
+  metaDescription String?  @map("meta_description")
+  
+  status      PostStatus @default(DRAFT)
+  publishedAt DateTime?  @map("published_at")
+  
+  // Featured image
+  featuredImage String?  @map("featured_image")
+  
+  // Relations
+  authorId    String     @map("author_id")
+  author      User       @relation(fields: [authorId], references: [id])
+  
+  categoryId  String?    @map("category_id")
+  category    Category?  @relation(fields: [categoryId], references: [id])
+  
+  tags        Tag[]      // Many-to-many relation
+  
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  
+  @@map("posts")
+}
+
+// Media - File uploads
+model Media {
+  id          String   @id @default(uuid())
+  filename    String                    // Original filename
+  filepath    String                    // Storage path
+  mimetype    String                    // File type (image/jpeg, etc.)
+  size        Int                       // File size in bytes
+  alt         String?                   // Alt text for images (accessibility)
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  
+  @@map("media")
+}
+
+// ===========================================
+// CRM MODULE - Customer Relationship Management
+// ===========================================
+
+// Lead Status - Track lead progress
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  UNQUALIFIED
+  CONVERTED
+}
+
+// Deal Stage - Sales pipeline stages
+enum DealStage {
+  PROSPECTING
+  QUALIFICATION
+  PROPOSAL
+  NEGOTIATION
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+// Activity Type
+enum ActivityType {
+  CALL
+  EMAIL
+  MEETING
+  TASK
+  NOTE
+}
+
+// Contact - Customer/Lead contact information
+model Contact {
+  id          String   @id @default(uuid())
+  firstName   String   @map("first_name")
+  lastName    String   @map("last_name")
+  email       String?  @unique
+  phone       String?
+  company     String?
+  jobTitle    String?  @map("job_title")
+  address     String?
+  city        String?
+  country     String?
+  notes       String?  @db.Text
+  
+  // Owner - Who manages this contact
+  ownerId     String   @map("owner_id")
+  owner       User     @relation(fields: [ownerId], references: [id])
+  
+  // Relations
+  leads       Lead[]
+  deals       Deal[]
+  activities  Activity[]
+  
+  // Link to ERP Customer
+  customer    Customer?
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  @@map("contacts")
+}
+
+// Lead - Potential customer tracking
+model Lead {
+  id          String     @id @default(uuid())
+  title       String                  // Lead title/description
+  source      String?                 // Where did this lead come from?
+  status      LeadStatus @default(NEW)
+  value       Decimal?   @db.Decimal(10, 2)  // Estimated value
+  
+  // Related contact
+  contactId   String     @map("contact_id")
+  contact     Contact    @relation(fields: [contactId], references: [id])
+  
+  // Owner
+  ownerId     String     @map("owner_id")
+  owner       User       @relation(fields: [ownerId], references: [id])
+  
+  // Can convert to Deal
+  deal        Deal?
+  
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  
+  @@map("leads")
+}
+
+// Deal - Sales opportunity
+model Deal {
+  id          String    @id @default(uuid())
+  title       String
+  value       Decimal   @db.Decimal(10, 2)  // Deal value
+  stage       DealStage @default(PROSPECTING)
+  probability Int       @default(0)         // Win probability %
+  expectedCloseDate DateTime? @map("expected_close_date")
+  
+  // Relations
+  contactId   String    @map("contact_id")
+  contact     Contact   @relation(fields: [contactId], references: [id])
+  
+  leadId      String?   @unique @map("lead_id")  // Optional: converted from lead
+  lead        Lead?     @relation(fields: [leadId], references: [id])
+  
+  ownerId     String    @map("owner_id")
+  owner       User      @relation(fields: [ownerId], references: [id])
+  
+  activities  Activity[]
+  
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  
+  @@map("deals")
+}
+
+// Activity - Calls, emails, meetings, tasks
+model Activity {
+  id          String       @id @default(uuid())
+  type        ActivityType
+  title       String
+  description String?      @db.Text
+  dueDate     DateTime?    @map("due_date")
+  completed   Boolean      @default(false)
+  completedAt DateTime?    @map("completed_at")
+  
+  // Relations - Activity can be linked to contact and/or deal
+  contactId   String?      @map("contact_id")
+  contact     Contact?     @relation(fields: [contactId], references: [id])
+  
+  dealId      String?      @map("deal_id")
+  deal        Deal?        @relation(fields: [dealId], references: [id])
+  
+  ownerId     String       @map("owner_id")
+  owner       User         @relation(fields: [ownerId], references: [id])
+  
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  
+  @@map("activities")
+}
+
+// ===========================================
+// ERP MODULE - Enterprise Resource Planning
+// ===========================================
+
+// Order Status
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+// Invoice Status
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+// Product - Items for sale
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  sku         String   @unique     // Stock Keeping Unit - unique product code
+  description String?  @db.Text
+  price       Decimal  @db.Decimal(10, 2)
+  cost        Decimal? @db.Decimal(10, 2)  // Cost price (for profit calculation)
+  
+  // Inventory
+  stockQuantity Int    @default(0) @map("stock_quantity")
+  lowStockThreshold Int @default(10) @map("low_stock_threshold")
+  
+  // Status
+  isActive    Boolean  @default(true) @map("is_active")
+  
+  // Relations
+  orderItems     SalesOrderItem[]
+  inventoryLogs  InventoryLog[]
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  @@map("products")
+}
+
+// Customer - ERP customer (can be linked to CRM Contact)
+model Customer {
+  id          String   @id @default(uuid())
+  name        String                  // Company or individual name
+  email       String   @unique
+  phone       String?
+  
+  // Billing Address
+  billingAddress  String? @map("billing_address")
+  billingCity     String? @map("billing_city")
+  billingCountry  String? @map("billing_country")
+  billingPostal   String? @map("billing_postal")
+  
+  // Shipping Address
+  shippingAddress String? @map("shipping_address")
+  shippingCity    String? @map("shipping_city")
+  shippingCountry String? @map("shipping_country")
+  shippingPostal  String? @map("shipping_postal")
+  
+  // Link to CRM Contact
+  contactId   String?  @unique @map("contact_id")
+  contact     Contact? @relation(fields: [contactId], references: [id])
+  
+  // Relations
+  salesOrders SalesOrder[]
+  invoices    Invoice[]
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  @@map("customers")
+}
+
+// Vendor/Supplier
+model Vendor {
+  id          String   @id @default(uuid())
+  name        String
+  email       String?
+  phone       String?
+  address     String?
+  city        String?
+  country     String?
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  @@map("vendors")
+}
+
+// Sales Order
+model SalesOrder {
+  id            String      @id @default(uuid())
+  orderNumber   String      @unique @map("order_number")  // Auto-generated
+  status        OrderStatus @default(DRAFT)
+  
+  // Customer
+  customerId    String      @map("customer_id")
+  customer      Customer    @relation(fields: [customerId], references: [id])
+  
+  // Salesperson
+  userId        String      @map("user_id")
+  user          User        @relation(fields: [userId], references: [id])
+  
+  // Dates
+  orderDate     DateTime    @default(now()) @map("order_date")
+  expectedDate  DateTime?   @map("expected_date")
+  
+  // Totals
+  subtotal      Decimal     @db.Decimal(10, 2)
+  taxRate       Decimal     @default(0) @db.Decimal(5, 2) @map("tax_rate")
+  taxAmount     Decimal     @default(0) @db.Decimal(10, 2) @map("tax_amount")
+  discount      Decimal     @default(0) @db.Decimal(10, 2)
+  total         Decimal     @db.Decimal(10, 2)
+  
+  // Notes
+  notes         String?     @db.Text
+  
+  // Relations
+  items         SalesOrderItem[]
+  invoice       Invoice?
+  
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  
+  @@map("sales_orders")
+}
+
+// Sales Order Item - Line items in an order
+model SalesOrderItem {
+  id          String     @id @default(uuid())
+  
+  orderId     String     @map("order_id")
+  order       SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  productId   String     @map("product_id")
+  product     Product    @relation(fields: [productId], references: [id])
+  
+  quantity    Int
+  unitPrice   Decimal    @db.Decimal(10, 2) @map("unit_price")
+  discount    Decimal    @default(0) @db.Decimal(10, 2)
+  total       Decimal    @db.Decimal(10, 2)
+  
+  @@map("sales_order_items")
+}
+
+// Invoice
+model Invoice {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique @map("invoice_number")
+  status        InvoiceStatus @default(DRAFT)
+  
+  // Customer
+  customerId    String        @map("customer_id")
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  
+  // Linked Order (optional)
+  orderId       String?       @unique @map("order_id")
+  order         SalesOrder?   @relation(fields: [orderId], references: [id])
+  
+  // Dates
+  issueDate     DateTime      @default(now()) @map("issue_date")
+  dueDate       DateTime      @map("due_date")
+  paidDate      DateTime?     @map("paid_date")
+  
+  // Totals
+  subtotal      Decimal       @db.Decimal(10, 2)
+  taxAmount     Decimal       @default(0) @db.Decimal(10, 2) @map("tax_amount")
+  discount      Decimal       @default(0) @db.Decimal(10, 2)
+  total         Decimal       @db.Decimal(10, 2)
+  
+  notes         String?       @db.Text
+  
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  
+  @@map("invoices")
+}
+
+// Inventory Log - Track stock changes
+model InventoryLog {
+  id          String   @id @default(uuid())
+  
+  productId   String   @map("product_id")
+  product     Product  @relation(fields: [productId], references: [id])
+  
+  quantityChange Int   @map("quantity_change")  // Positive = add, Negative = remove
+  reason      String                            // "Sale", "Purchase", "Adjustment", etc.
+  reference   String?                           // Order ID, etc.
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  
+  @@map("inventory_logs")
+}
+
+// ===========================================
+// SYSTEM MODULE - Audit & Settings
+// ===========================================
+
+// Audit Log - Track all changes (important for compliance!)
+model AuditLog {
+  id          String   @id @default(uuid())
+  
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id])
+  
+  action      String                    // "CREATE", "UPDATE", "DELETE"
+  entity      String                    // "Post", "Contact", "Order", etc.
+  entityId    String   @map("entity_id")
+  
+  oldValues   String?  @db.Text @map("old_values")  // JSON of previous values
+  newValues   String?  @db.Text @map("new_values")  // JSON of new values
+  
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  
+  @@map("audit_logs")
+}
+
+// Settings - Application settings (key-value store)
+model Setting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String   @db.Text
+  description String?
+  
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  @@map("settings")
+}

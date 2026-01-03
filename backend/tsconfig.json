@@ -1,0 +1,49 @@
+{
+  // TypeScript Configuration for NestJS Backend
+  // =============================================
+  // WHY: TypeScript adds static typing to JavaScript, catching errors at compile time
+  // This config tells TypeScript how to compile our code
+
+  "compilerOptions": {
+    // Output Settings
+    "module": "commonjs",           // Use CommonJS modules (Node.js standard)
+    "target": "ES2021",             // Compile to ES2021 (modern Node.js supports this)
+    "outDir": "./dist",             // Compiled JS files go here
+    "rootDir": "./src",             // Source files are here
+
+    // Strict Type Checking (Important for production!)
+    "strict": true,                 // Enable all strict type checks
+    "strictNullChecks": true,       // null/undefined must be handled explicitly
+    "strictPropertyInitialization": false, // Needed for NestJS dependency injection
+    "noImplicitAny": true,          // Variables must have explicit types
+
+    // Module Resolution
+    "moduleResolution": "node",     // Use Node.js module resolution
+    "esModuleInterop": true,        // Better CommonJS/ES module compatibility
+    "resolveJsonModule": true,      // Allow importing JSON files
+
+    // Decorators (Required for NestJS!)
+    // WHY: NestJS uses decorators like @Controller, @Injectable, @Module
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    // Build Optimizations
+    "declaration": true,            // Generate .d.ts type declaration files
+    "removeComments": true,         // Remove comments in compiled output
+    "incremental": true,            // Faster subsequent builds
+    "skipLibCheck": true,           // Skip type checking of .d.ts files (faster builds)
+
+    // Path Aliases (cleaner imports)
+    // Instead of: import { User } from '../../../modules/users/entities/user.entity'
+    // You can do: import { User } from '@modules/users/entities/user.entity'
+    "baseUrl": "./src",
+    "paths": {
+      "@modules/*": ["modules/*"],
+      "@common/*": ["common/*"],
+      "@config/*": ["config/*"]
+    }
+  },
+  
+  "include": ["src/**/*"],          // Compile all files in src
+  "exclude": ["node_modules", "dist", "test"] // Don't compile these
+}
