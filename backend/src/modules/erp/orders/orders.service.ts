@@ -3,8 +3,12 @@
 // ===========================================
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OrderStatus, Prisma } from '@prisma/client';
+import { QUEUE_NAMES } from '../../shared/queue/queue.module';
+import { ProcessOrderJob } from './order.processor';
 
 interface OrderItem {
   productId: string;
@@ -14,7 +18,10 @@ interface OrderItem {
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @InjectQueue(QUEUE_NAMES.ORDER_PROCESSING) private orderQueue: Queue<ProcessOrderJob>,
+  ) {}
   
   async create(userId: string, data: {
     customerId: string;
@@ -166,6 +173,65 @@ export class OrdersService {
         },
       },
     });
+  }
+  
+  // Confirm order and queue for processing
+  async confirmOrder(id: string, userId: string) {
+    const order = await this.findById(id);
+    
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Can only confirm draft orders');
+    }
+    
+    // Update status to CONFIRMED
+    const confirmedOrder = await this.prisma.salesOrder.update({
+      where: { id },
+      data: { status: OrderStatus.CONFIRMED },
+      include: {
+        customer: true,
+        items: { include: { product: true } },
+      },
+    });
+    
+    // Queue for background processing
+    const job = await this.orderQueue.add(
+      'process-order',
+      { orderId: id, userId },
+      {
+        jobId: `order-${id}`,
+        priority: 1, // High priority
+      },
+    );
+    
+    return {
+      ...confirmedOrder,
+      jobId: job.id,
+      message: 'Order confirmed and queued for processing',
+    };
+  }
+  
+  // Get order processing status (job status)
+  async getProcessingStatus(id: string) {
+    const order = await this.findById(id);
+    
+    // Try to get the job from the queue
+    const job = await this.orderQueue.getJob(`order-${id}`);
+    
+    let processingStatus = 'not_started';
+    let progress = 0;
+    
+    if (job) {
+      const state = await job.getState();
+      processingStatus = state;
+      progress = job.progress as number || 0;
+    }
+    
+    return {
+      orderId: id,
+      orderStatus: order.status,
+      processingStatus,
+      progress,
+    };
   }
   
   async delete(id: string) {

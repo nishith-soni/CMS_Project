@@ -25,8 +25,20 @@ import {
   DialogActions,
   CircularProgress,
   Alert,
+  Snackbar,
+  Tooltip,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
-import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Search as SearchIcon } from '@mui/icons-material';
+import { 
+  Add as AddIcon, 
+  Edit as EditIcon, 
+  Delete as DeleteIcon, 
+  Search as SearchIcon,
+  Inventory as InventoryIcon,
+} from '@mui/icons-material';
 import { productsService } from '../../services/erpService';
 import type { Product } from '../../services/erpService';
 
@@ -34,16 +46,25 @@ function ProductsPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [stockDialogOpen, setStockDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [stockProduct, setStockProduct] = useState<Product | null>(null);
+  const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
+  const [stockAdjustment, setStockAdjustment] = useState({ quantity: '', operation: 'add' as 'add' | 'subtract' | 'set' });
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+    open: false,
+    message: '',
+    severity: 'success',
+  });
   const [formData, setFormData] = useState({
     name: '',
     sku: '',
     description: '',
     price: '',
     cost: '',
-    quantity: '',
-    minQuantity: '',
-    category: '',
+    stockQuantity: '',
+    lowStockThreshold: '',
   });
 
   const { data: products, isLoading, error } = useQuery({
@@ -55,7 +76,11 @@ function ProductsPage() {
     mutationFn: (data: Partial<Product>) => productsService.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
+      setSnackbar({ open: true, message: 'Product created successfully!', severity: 'success' });
       handleCloseDialog();
+    },
+    onError: (error: any) => {
+      setSnackbar({ open: true, message: error.response?.data?.message || 'Failed to create product', severity: 'error' });
     },
   });
 
@@ -63,13 +88,40 @@ function ProductsPage() {
     mutationFn: ({ id, data }: { id: string; data: Partial<Product> }) => productsService.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
+      setSnackbar({ open: true, message: 'Product updated successfully!', severity: 'success' });
       handleCloseDialog();
+    },
+    onError: (error: any) => {
+      setSnackbar({ open: true, message: error.response?.data?.message || 'Failed to update product', severity: 'error' });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => productsService.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['products'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setSnackbar({ open: true, message: 'Product deleted successfully!', severity: 'success' });
+      setDeleteDialogOpen(false);
+      setDeleteProduct(null);
+    },
+    onError: (error: any) => {
+      setSnackbar({ open: true, message: error.response?.data?.message || 'Failed to delete product', severity: 'error' });
+    },
+  });
+
+  const stockMutation = useMutation({
+    mutationFn: ({ id, quantity, operation }: { id: string; quantity: number; operation: 'add' | 'subtract' | 'set' }) => 
+      productsService.updateStock(id, quantity, operation),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setSnackbar({ open: true, message: 'Stock updated successfully!', severity: 'success' });
+      setStockDialogOpen(false);
+      setStockProduct(null);
+      setStockAdjustment({ quantity: '', operation: 'add' });
+    },
+    onError: (error: any) => {
+      setSnackbar({ open: true, message: error.response?.data?.message || 'Failed to update stock', severity: 'error' });
+    },
   });
 
   const handleOpenDialog = (product?: Product) => {
@@ -81,13 +133,12 @@ function ProductsPage() {
         description: product.description || '',
         price: product.price.toString(),
         cost: product.cost?.toString() || '',
-        quantity: product.quantity.toString(),
-        minQuantity: product.minQuantity.toString(),
-        category: product.category || '',
+        stockQuantity: product.stockQuantity.toString(),
+        lowStockThreshold: product.lowStockThreshold.toString(),
       });
     } else {
       setEditingProduct(null);
-      setFormData({ name: '', sku: '', description: '', price: '', cost: '', quantity: '0', minQuantity: '10', category: '' });
+      setFormData({ name: '', sku: '', description: '', price: '', cost: '', stockQuantity: '0', lowStockThreshold: '10' });
     }
     setDialogOpen(true);
   };
@@ -104,9 +155,8 @@ function ProductsPage() {
       description: formData.description || null,
       price: parseFloat(formData.price),
       cost: formData.cost ? parseFloat(formData.cost) : null,
-      quantity: parseInt(formData.quantity),
-      minQuantity: parseInt(formData.minQuantity),
-      category: formData.category || null,
+      stockQuantity: parseInt(formData.stockQuantity),
+      lowStockThreshold: parseInt(formData.lowStockThreshold),
     };
     if (editingProduct) {
       updateMutation.mutate({ id: editingProduct.id, data });
@@ -115,9 +165,9 @@ function ProductsPage() {
     }
   };
 
-  const getStockStatus = (quantity: number, minQuantity: number) => {
-    if (quantity === 0) return { label: 'Out of Stock', color: 'error' as const };
-    if (quantity <= minQuantity) return { label: 'Low Stock', color: 'warning' as const };
+  const getStockStatus = (stockQuantity: number, lowStockThreshold: number) => {
+    if (stockQuantity === 0) return { label: 'Out of Stock', color: 'error' as const };
+    if (stockQuantity <= lowStockThreshold) return { label: 'Low Stock', color: 'warning' as const };
     return { label: 'In Stock', color: 'success' as const };
   };
 
@@ -171,21 +221,30 @@ function ProductsPage() {
               </TableRow>
             ) : (
               filteredProducts.map((product) => {
-                const status = getStockStatus(product.quantity, product.minQuantity);
+                const status = getStockStatus(product.stockQuantity, product.lowStockThreshold);
                 return (
                   <TableRow key={product.id} hover>
                     <TableCell>{product.name}</TableCell>
                     <TableCell>{product.sku}</TableCell>
                     <TableCell>${Number(product.price).toFixed(2)}</TableCell>
-                    <TableCell>{product.quantity}</TableCell>
+                    <TableCell>{product.stockQuantity}</TableCell>
                     <TableCell>
                       <Chip label={status.label} color={status.color} size="small" />
                     </TableCell>
                     <TableCell align="right">
-                      <IconButton size="small" onClick={() => handleOpenDialog(product)}><EditIcon /></IconButton>
-                      <IconButton size="small" color="error" onClick={() => deleteMutation.mutate(product.id)}>
-                        <DeleteIcon />
-                      </IconButton>
+                      <Tooltip title="Adjust Stock">
+                        <IconButton size="small" color="primary" onClick={() => { setStockProduct(product); setStockDialogOpen(true); }}>
+                          <InventoryIcon />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Edit">
+                        <IconButton size="small" onClick={() => handleOpenDialog(product)}><EditIcon /></IconButton>
+                      </Tooltip>
+                      <Tooltip title="Delete">
+                        <IconButton size="small" color="error" onClick={() => { setDeleteProduct(product); setDeleteDialogOpen(true); }}>
+                          <DeleteIcon />
+                        </IconButton>
+                      </Tooltip>
                     </TableCell>
                   </TableRow>
                 );
@@ -200,18 +259,15 @@ function ProductsPage() {
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             <TextField fullWidth label="Name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField fullWidth label="SKU" value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} required />
-              <TextField fullWidth label="Category" value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} />
-            </Box>
+            <TextField fullWidth label="SKU" value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} required />
             <TextField fullWidth label="Description" multiline rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
             <Box sx={{ display: 'flex', gap: 2 }}>
               <TextField fullWidth label="Price ($)" type="number" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} required />
               <TextField fullWidth label="Cost ($)" type="number" value={formData.cost} onChange={(e) => setFormData({ ...formData, cost: e.target.value })} />
             </Box>
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField fullWidth label="Stock Quantity" type="number" value={formData.quantity} onChange={(e) => setFormData({ ...formData, quantity: e.target.value })} required />
-              <TextField fullWidth label="Min Quantity (Alert)" type="number" value={formData.minQuantity} onChange={(e) => setFormData({ ...formData, minQuantity: e.target.value })} />
+              <TextField fullWidth label="Stock Quantity" type="number" value={formData.stockQuantity} onChange={(e) => setFormData({ ...formData, stockQuantity: e.target.value })} required />
+              <TextField fullWidth label="Low Stock Threshold" type="number" value={formData.lowStockThreshold} onChange={(e) => setFormData({ ...formData, lowStockThreshold: e.target.value })} />
             </Box>
           </Box>
         </DialogContent>
@@ -222,6 +278,89 @@ function ProductsPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Stock Adjustment Dialog */}
+      <Dialog open={stockDialogOpen} onClose={() => setStockDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Adjust Stock - {stockProduct?.name}</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Current Stock: <strong>{stockProduct?.stockQuantity}</strong>
+            </Typography>
+            <FormControl fullWidth>
+              <InputLabel>Operation</InputLabel>
+              <Select
+                label="Operation"
+                value={stockAdjustment.operation}
+                onChange={(e) => setStockAdjustment({ ...stockAdjustment, operation: e.target.value as 'add' | 'subtract' | 'set' })}
+              >
+                <MenuItem value="add">Add to Stock</MenuItem>
+                <MenuItem value="subtract">Remove from Stock</MenuItem>
+                <MenuItem value="set">Set Stock to</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              fullWidth
+              label="Quantity"
+              type="number"
+              value={stockAdjustment.quantity}
+              onChange={(e) => setStockAdjustment({ ...stockAdjustment, quantity: e.target.value })}
+              inputProps={{ min: 0 }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setStockDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => stockProduct && stockMutation.mutate({
+              id: stockProduct.id,
+              quantity: parseInt(stockAdjustment.quantity),
+              operation: stockAdjustment.operation,
+            })}
+            disabled={!stockAdjustment.quantity || stockMutation.isPending}
+          >
+            {stockMutation.isPending ? 'Updating...' : 'Update Stock'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+        <DialogTitle>Delete Product?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete <strong>{deleteProduct?.name}</strong>? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => deleteProduct && deleteMutation.mutate(deleteProduct.id)}
+            disabled={deleteMutation.isPending}
+          >
+            {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Snackbar for feedback */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+          severity={snackbar.severity}
+          variant="filled"
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

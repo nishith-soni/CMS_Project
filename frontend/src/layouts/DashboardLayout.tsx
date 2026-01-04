@@ -43,6 +43,7 @@ import {
   Logout as LogoutIcon,
   ExpandLess,
   ExpandMore,
+  Receipt as ReceiptIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../store/authStore';
 
@@ -81,6 +82,7 @@ const menuItems = [
       { title: 'Products', path: '/erp/products', icon: <InventoryIcon /> },
       { title: 'Customers', path: '/erp/customers', icon: <PeopleIcon /> },
       { title: 'Orders', path: '/erp/orders', icon: <ShoppingCartIcon /> },
+      { title: 'Invoices', path: '/erp/invoices', icon: <ReceiptIcon /> },
     ],
   },
   {

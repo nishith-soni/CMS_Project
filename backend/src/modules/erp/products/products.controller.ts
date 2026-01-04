@@ -80,10 +80,10 @@ class UpdateProductDto {
 
 class UpdateStockDto {
   @IsNumber()
-  quantityChange: number;
+  quantity: number;
   
   @IsString()
-  reason: string;
+  operation: 'add' | 'subtract' | 'set';
 }
 
 @Controller('erp/products')
@@ -140,8 +140,8 @@ export class ProductsController {
   ) {
     return this.productsService.updateStock(
       id,
-      updateStockDto.quantityChange,
-      updateStockDto.reason,
+      updateStockDto.quantity,
+      updateStockDto.operation,
     );
   }
   

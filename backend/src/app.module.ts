@@ -9,6 +9,9 @@
 // MODULE STRUCTURE:
 // AppModule (root)
 // ├── ConfigModule (environment variables)
+// ├── ScheduleModule (cron jobs)
+// ├── EventEmitterModule (internal events)
+// ├── SharedModule (queues, mail, notifications)
 // ├── PrismaModule (database)
 // ├── AuthModule (authentication)
 // ├── UsersModule (user management)
@@ -18,6 +21,9 @@
 
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { SharedModule } from './modules/shared/shared.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -36,6 +42,24 @@ import { ErpModule } from './modules/erp/erp.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    
+    // ===========================================
+    // ScheduleModule - Cron Jobs
+    // ===========================================
+    // WHY: Enables @Cron() decorators for scheduled tasks
+    ScheduleModule.forRoot(),
+    
+    // ===========================================
+    // EventEmitterModule - Internal Events
+    // ===========================================
+    // WHY: Enables event-driven architecture within the app
+    EventEmitterModule.forRoot(),
+    
+    // ===========================================
+    // Shared Module - Queues, Mail, Notifications
+    // ===========================================
+    // WHY: Provides BullMQ queues, email service, and notifications
+    SharedModule,
     
     // ===========================================
     // Feature Modules

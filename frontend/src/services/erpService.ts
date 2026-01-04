@@ -14,9 +14,8 @@ export type Product = {
   description: string | null;
   price: number;
   cost: number | null;
-  quantity: number;
-  minQuantity: number;
-  category: string | null;
+  stockQuantity: number;
+  lowStockThreshold: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -50,14 +49,42 @@ export type Order = {
   orderNumber: string;
   customerId: string;
   customer: Customer;
-  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+  status: 'DRAFT' | 'CONFIRMED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
   subtotal: number;
-  tax: number;
+  taxRate: number;
+  taxAmount: number;
+  discount: number;
   total: number;
   notes: string | null;
   items: OrderItem[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type Invoice = {
+  id: string;
+  invoiceNumber: string;
+  customerId: string;
+  customer: Customer;
+  orderId: string | null;
+  status: 'DRAFT' | 'SENT' | 'PAID' | 'OVERDUE' | 'CANCELLED';
+  subtotal: number;
+  taxAmount: number;
+  discount: number;
+  total: number;
+  issueDate: string;
+  dueDate: string;
+  paidDate: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProcessingStatus = {
+  orderId: string;
+  orderStatus: Order['status'];
+  processingStatus: 'not_started' | 'waiting' | 'active' | 'completed' | 'failed';
+  progress: number;
 };
 
 export type PaginatedResponse<T> = {
@@ -157,7 +184,54 @@ export const ordersService = {
     return response.data;
   },
 
+  confirmOrder: async (id: string): Promise<Order & { jobId: string; message: string }> => {
+    const response = await api.post<Order & { jobId: string; message: string }>(`/erp/orders/${id}/confirm`);
+    return response.data;
+  },
+
+  getProcessingStatus: async (id: string): Promise<ProcessingStatus> => {
+    const response = await api.get<ProcessingStatus>(`/erp/orders/${id}/processing-status`);
+    return response.data;
+  },
+
   delete: async (id: string): Promise<void> => {
     await api.delete(`/erp/orders/${id}`);
+  },
+};
+
+// ===========================================
+// Invoices Service
+// ===========================================
+export const invoicesService = {
+  getAll: async (): Promise<Invoice[]> => {
+    const response = await api.get<PaginatedResponse<Invoice>>('/erp/invoices');
+    return response.data.data;
+  },
+
+  getById: async (id: string): Promise<Invoice> => {
+    const response = await api.get<Invoice>(`/erp/invoices/${id}`);
+    return response.data;
+  },
+
+  updateStatus: async (id: string, status: Invoice['status']): Promise<Invoice> => {
+    const response = await api.patch<Invoice>(`/erp/invoices/${id}/status`, { status });
+    return response.data;
+  },
+
+  sendInvoice: async (id: string): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>(`/erp/invoices/${id}/send`);
+    return response.data;
+  },
+
+  getStats: async (): Promise<{
+    total: number;
+    draft: number;
+    sent: number;
+    paid: number;
+    overdue: number;
+    totalRevenue: number;
+  }> => {
+    const response = await api.get('/erp/invoices/stats');
+    return response.data;
   },
 };

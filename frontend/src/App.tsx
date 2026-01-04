@@ -34,6 +34,7 @@ import DealsPage from './pages/crm/DealsPage';
 import ProductsPage from './pages/erp/ProductsPage';
 import CustomersPage from './pages/erp/CustomersPage';
 import OrdersPage from './pages/erp/OrdersPage';
+import InvoicesPage from './pages/erp/InvoicesPage';
 
 // Settings
 import UsersPage from './pages/settings/UsersPage';
@@ -114,6 +115,7 @@ function App() {
         <Route path="/erp/products" element={<ProductsPage />} />
         <Route path="/erp/customers" element={<CustomersPage />} />
         <Route path="/erp/orders" element={<OrdersPage />} />
+        <Route path="/erp/invoices" element={<InvoicesPage />} />
         
         {/* Settings */}
         <Route path="/settings/users" element={<UsersPage />} />

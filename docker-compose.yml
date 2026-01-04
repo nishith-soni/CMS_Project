@@ -63,8 +63,26 @@ services:
       postgres:
         condition: service_healthy
 
+  # Redis - In-Memory Cache & Queue Backend
+  # ========================================
+  # WHY: BullMQ uses Redis for job queues (order processing, emails, etc.)
+  redis:
+    image: redis:7-alpine
+    container_name: cms_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 # Named volumes for data persistence
 # WHY: Data survives container restarts/rebuilds
 volumes:
   postgres_data:
   pgadmin_data:
+  redis_data:

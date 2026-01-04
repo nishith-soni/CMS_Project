@@ -99,6 +99,19 @@ export class OrdersController {
     return this.ordersService.create(user.id, createOrderDto);
   }
   
+  @Post(':id/confirm')
+  async confirmOrder(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.ordersService.confirmOrder(id, user.id);
+  }
+  
+  @Get(':id/processing-status')
+  async getProcessingStatus(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ordersService.getProcessingStatus(id);
+  }
+  
   @Patch(':id/status')
   async updateStatus(
     @Param('id', ParseUUIDPipe) id: string,

@@ -94,22 +94,40 @@ export class ProductsService {
     });
   }
   
-  async updateStock(id: string, quantityChange: number, reason: string) {
+  async updateStock(id: string, quantity: number, operation: 'add' | 'subtract' | 'set') {
     const product = await this.findById(id);
+    
+    let newQuantity: number;
+    let quantityChange: number;
+    
+    switch (operation) {
+      case 'add':
+        newQuantity = product.stockQuantity + quantity;
+        quantityChange = quantity;
+        break;
+      case 'subtract':
+        newQuantity = Math.max(0, product.stockQuantity - quantity);
+        quantityChange = -Math.min(quantity, product.stockQuantity);
+        break;
+      case 'set':
+        newQuantity = quantity;
+        quantityChange = quantity - product.stockQuantity;
+        break;
+    }
     
     // Update stock and log the change
     const [updatedProduct] = await this.prisma.$transaction([
       this.prisma.product.update({
         where: { id },
         data: {
-          stockQuantity: { increment: quantityChange },
+          stockQuantity: newQuantity,
         },
       }),
       this.prisma.inventoryLog.create({
         data: {
           productId: id,
           quantityChange,
-          reason,
+          reason: `Stock ${operation}: ${quantity} units`,
         },
       }),
     ]);
