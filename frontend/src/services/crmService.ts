@@ -7,6 +7,20 @@ import api from './api';
 // ===========================================
 // Types
 // ===========================================
+export type Activity = {
+  id: string;
+  type: 'CALL' | 'EMAIL' | 'MEETING' | 'TASK' | 'NOTE';
+  title: string;
+  description: string | null;
+  dueDate: string | null;
+  completed: boolean;
+  completedAt: string | null;
+  contactId: string | null;
+  dealId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Contact = {
   id: string;
   firstName: string;
@@ -19,6 +33,7 @@ export type Contact = {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  activities?: Activity[];
 };
 
 export type Lead = {
@@ -57,6 +72,53 @@ export type PaginatedResponse<T> = {
     pageSize: number;
     totalPages: number;
   };
+};
+
+// ===========================================
+// Activities Service
+// ===========================================
+export const activitiesService = {
+  getAll: async (params?: { contactId?: string; dealId?: string; page?: number; pageSize?: number }): Promise<PaginatedResponse<Activity>> => {
+    const searchParams = new URLSearchParams();
+    if (params?.contactId) searchParams.set('contactId', params.contactId);
+    if (params?.dealId) searchParams.set('dealId', params.dealId);
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+
+    const query = searchParams.toString();
+    const url = query ? `/crm/activities?${query}` : '/crm/activities';
+
+    const response = await api.get<PaginatedResponse<Activity>>(url);
+    return response.data;
+  },
+
+  create: async (data: {
+    type: Activity['type'];
+    title: string;
+    description?: string;
+    contactId?: string;
+    dealId?: string;
+    dueDate?: string;
+  }): Promise<Activity> => {
+    const response = await api.post<Activity>('/crm/activities', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: Partial<Omit<Activity, 'id' | 'contactId' | 'dealId' | 'createdAt' | 'updatedAt'>>): Promise<Activity> => {
+    const response = await api.patch<Activity>(`/crm/activities/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/crm/activities/${id}`);
+  },
+
+  getTaskSummary: async (): Promise<{ today: Activity[]; overdue: Activity[] }> => {
+    const response = await api.get<{ today: Activity[]; overdue: Activity[] }>(
+      '/crm/activities/summary/tasks',
+    );
+    return response.data;
+  },
 };
 
 // ===========================================

@@ -24,9 +24,15 @@ import {
   CircularProgress,
   Alert,
   IconButton,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  Chip as MuiChip,
 } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
-import { dealsService } from '../../services/crmService';
+import { Add as AddIcon, Delete as DeleteIcon, EventNote as ActivityIcon, Edit as EditIcon } from '@mui/icons-material';
+import { dealsService, activitiesService } from '../../services/crmService';
+import type { Deal, Activity } from '../../services/crmService';
 
 const stages = [
   { id: 'PROSPECTING', name: 'Prospecting', color: '#90caf9' },
@@ -41,11 +47,28 @@ function DealsPage() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({ title: '', value: '', stage: 'PROSPECTING' });
+  const [activityDialogOpen, setActivityDialogOpen] = useState(false);
+  const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
+  const [activityForm, setActivityForm] = useState({
+    type: 'NOTE' as Activity['type'],
+    title: '',
+    description: '',
+    dueDate: '',
+  });
+  const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
 
   const { data: deals, isLoading, error } = useQuery({
     queryKey: ['deals'],
     queryFn: dealsService.getAll,
   });
+
+  const { data: dealActivitiesData, refetch: refetchDealActivities } = useQuery({
+    queryKey: ['deal-activities', selectedDeal?.id],
+    queryFn: () => activitiesService.getAll({ dealId: selectedDeal!.id, pageSize: 20 }),
+    enabled: !!selectedDeal,
+  });
+
+  const dealActivities: Activity[] = dealActivitiesData?.data || [];
 
   const createMutation = useMutation({
     mutationFn: dealsService.create,
@@ -66,6 +89,44 @@ function DealsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['deals'] }),
   });
 
+  const createActivityMutation = useMutation({
+    mutationFn: (data: {
+      type: Activity['type'];
+      title: string;
+      description?: string;
+      dueDate?: string;
+      dealId: string;
+    }) => activitiesService.create(data),
+    onSuccess: () => {
+      refetchDealActivities();
+      queryClient.invalidateQueries({ queryKey: ['crm-task-summary'] });
+      setActivityForm({ type: 'NOTE', title: '', description: '', dueDate: '' });
+    },
+  });
+
+  const updateActivityMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Activity> }) =>
+      activitiesService.update(id, data),
+    onSuccess: () => {
+      refetchDealActivities();
+      queryClient.invalidateQueries({ queryKey: ['crm-task-summary'] });
+      setEditingActivity(null);
+      setActivityForm({ type: 'NOTE', title: '', description: '', dueDate: '' });
+    },
+  });
+
+  const deleteActivityMutation = useMutation({
+    mutationFn: (id: string) => activitiesService.delete(id),
+    onSuccess: (_data, id) => {
+      refetchDealActivities();
+      queryClient.invalidateQueries({ queryKey: ['crm-task-summary'] });
+      if (editingActivity && editingActivity.id === id) {
+        setEditingActivity(null);
+        setActivityForm({ type: 'NOTE', title: '', description: '', dueDate: '' });
+      }
+    },
+  });
+
   const getDealsByStage = (stageId: string) => deals?.filter((deal) => deal.stage === stageId) || [];
   const getTotalByStage = (stageId: string) => getDealsByStage(stageId).reduce((sum, deal) => sum + deal.value, 0);
 
@@ -75,6 +136,41 @@ function DealsPage() {
       value: parseFloat(formData.value) || 0,
       stage: formData.stage as any,
     });
+  };
+
+  const openActivityDialog = (deal: Deal) => {
+    setSelectedDeal(deal);
+    setActivityDialogOpen(true);
+  };
+
+  const closeActivityDialog = () => {
+    setActivityDialogOpen(false);
+    setSelectedDeal(null);
+    setActivityForm({ type: 'NOTE', title: '', description: '', dueDate: '' });
+    setEditingActivity(null);
+  };
+
+  const handleSubmitActivity = () => {
+    if (!selectedDeal || !activityForm.title) return;
+
+    const baseData = {
+      type: activityForm.type,
+      title: activityForm.title,
+      description: activityForm.description || undefined,
+      dueDate: activityForm.dueDate || undefined,
+    };
+
+    if (editingActivity) {
+      updateActivityMutation.mutate({
+        id: editingActivity.id,
+        data: baseData,
+      });
+    } else {
+      createActivityMutation.mutate({
+        ...baseData,
+        dealId: selectedDeal.id,
+      });
+    }
   };
 
   if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>;
@@ -109,9 +205,14 @@ function DealsPage() {
                   <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                       <Typography variant="subtitle2" gutterBottom>{deal.title}</Typography>
-                      <IconButton size="small" onClick={() => deleteMutation.mutate(deal.id)}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
+                      <Box>
+                        <IconButton size="small" onClick={() => openActivityDialog(deal)}>
+                          <ActivityIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton size="small" onClick={() => deleteMutation.mutate(deal.id)}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
                     </Box>
                     <Typography variant="body2" color="text.secondary">{deal.contact ? `${deal.contact.firstName} ${deal.contact.lastName}` : 'No contact'}</Typography>
                     <Typography variant="body2" fontWeight="bold" color="primary" sx={{ mt: 1 }}>
@@ -172,6 +273,151 @@ function DealsPage() {
           <Button onClick={handleSave} variant="contained" disabled={createMutation.isPending}>
             {createMutation.isPending ? 'Creating...' : 'Create'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Deal Activities Dialog */}
+      <Dialog open={activityDialogOpen} onClose={closeActivityDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {selectedDeal ? `Activities for ${selectedDeal.title}` : 'Deal Activities'}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            {/* New activity form */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <FormControl fullWidth>
+                <InputLabel>Type</InputLabel>
+                <Select
+                  label="Type"
+                  value={activityForm.type}
+                  onChange={(e) => setActivityForm({ ...activityForm, type: e.target.value as Activity['type'] })}
+                >
+                  <MenuItem value="NOTE">Note</MenuItem>
+                  <MenuItem value="CALL">Call</MenuItem>
+                  <MenuItem value="EMAIL">Email</MenuItem>
+                  <MenuItem value="MEETING">Meeting</MenuItem>
+                  <MenuItem value="TASK">Task</MenuItem>
+                </Select>
+              </FormControl>
+              <TextField
+                label="Title"
+                fullWidth
+                value={activityForm.title}
+                onChange={(e) => setActivityForm({ ...activityForm, title: e.target.value })}
+              />
+              <TextField
+                label="Description"
+                fullWidth
+                multiline
+                minRows={2}
+                value={activityForm.description}
+                onChange={(e) => setActivityForm({ ...activityForm, description: e.target.value })}
+              />
+              <TextField
+                label="Due Date (optional)"
+                type="date"
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+                value={activityForm.dueDate}
+                onChange={(e) => setActivityForm({ ...activityForm, dueDate: e.target.value })}
+              />
+            </Box>
+
+            <Button
+              variant="contained"
+              onClick={handleSubmitActivity}
+              disabled={createActivityMutation.isPending || updateActivityMutation.isPending}
+            >
+              {editingActivity ? 'Update Activity' : 'Add Activity'}
+            </Button>
+            {editingActivity && (
+              <Button
+                onClick={() => {
+                  setEditingActivity(null);
+                  setActivityForm({ type: 'NOTE', title: '', description: '', dueDate: '' });
+                }}
+              >
+                Cancel Edit
+              </Button>
+            )}
+
+            {/* Existing activities */}
+            {dealActivities.length === 0 ? (
+              <Typography color="text.secondary" sx={{ mt: 2 }}>
+                No activities yet for this deal.
+              </Typography>
+            ) : (
+              <List sx={{ mt: 2 }}>
+                {dealActivities.map((activity) => (
+                  <ListItem key={activity.id} alignItems="flex-start">
+                    <ListItemText
+                      primary={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <MuiChip label={activity.type} size="small" />
+                          <Typography variant="subtitle2">{activity.title}</Typography>
+                        </Box>
+                      }
+                      secondary={
+                        <>
+                          {activity.description && (
+                            <Typography variant="body2" color="text.secondary">
+                              {activity.description}
+                            </Typography>
+                          )}
+                          <Typography variant="caption" color="text.secondary">
+                            {activity.dueDate
+                              ? `Due: ${new Date(activity.dueDate).toLocaleDateString()}`
+                              : `Created: ${new Date(activity.createdAt).toLocaleDateString()}`}
+                          </Typography>
+                        </>
+                      }
+                    />
+                    <ListItemSecondaryAction>
+                      {activity.type === 'TASK' && (
+                        <MuiChip
+                          label={activity.completed ? 'Done' : 'Mark done'}
+                          color={activity.completed ? 'success' : 'default'}
+                          size="small"
+                          onClick={() =>
+                            updateActivityMutation.mutate({
+                              id: activity.id,
+                              data: { completed: !activity.completed },
+                            })
+                          }
+                        />
+                      )}
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => deleteActivityMutation.mutate(activity.id)}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          setEditingActivity(activity);
+                          setActivityForm({
+                            type: activity.type,
+                            title: activity.title,
+                            description: activity.description || '',
+                            dueDate: activity.dueDate
+                              ? new Date(activity.dueDate).toISOString().slice(0, 10)
+                              : '',
+                          });
+                        }}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeActivityDialog}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

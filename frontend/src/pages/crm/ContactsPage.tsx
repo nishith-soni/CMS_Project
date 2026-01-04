@@ -25,6 +25,15 @@ import {
   DialogActions,
   CircularProgress,
   Alert,
+  Chip,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  MenuItem,
+  Select,
+  InputLabel,
+  FormControl,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -33,9 +42,10 @@ import {
   Search as SearchIcon,
   Email as EmailIcon,
   Phone as PhoneIcon,
+  EventNote as ActivityIcon,
 } from '@mui/icons-material';
-import { contactsService } from '../../services/crmService';
-import type { Contact } from '../../services/crmService';
+import { contactsService, activitiesService } from '../../services/crmService';
+import type { Contact, Activity } from '../../services/crmService';
 
 function ContactsPage() {
   const queryClient = useQueryClient();
@@ -51,10 +61,29 @@ function ContactsPage() {
     jobTitle: '',
   });
 
+  // Activities dialog state
+  const [activitiesDialogOpen, setActivitiesDialogOpen] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [activityForm, setActivityForm] = useState({
+    type: 'NOTE' as Activity['type'],
+    title: '',
+    description: '',
+    dueDate: '',
+  });
+  const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
+
   const { data: contacts, isLoading, error } = useQuery({
     queryKey: ['contacts'],
     queryFn: contactsService.getAll,
   });
+
+  const { data: activitiesData, refetch: refetchActivities } = useQuery({
+    queryKey: ['activities', selectedContact?.id],
+    queryFn: () => activitiesService.getAll({ contactId: selectedContact!.id, pageSize: 20 }),
+    enabled: !!selectedContact,
+  });
+
+  const activities: Activity[] = activitiesData?.data || [];
 
   const createMutation = useMutation({
     mutationFn: (data: Partial<Contact>) => contactsService.create(data),
@@ -76,6 +105,44 @@ function ContactsPage() {
     mutationFn: (id: string) => contactsService.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    },
+  });
+
+  const createActivityMutation = useMutation({
+    mutationFn: (data: {
+      type: Activity['type'];
+      title: string;
+      description?: string;
+      dueDate?: string;
+      contactId: string;
+    }) => activitiesService.create(data),
+    onSuccess: () => {
+      refetchActivities();
+      queryClient.invalidateQueries({ queryKey: ['crm-task-summary'] });
+      setActivityForm({ type: 'NOTE', title: '', description: '', dueDate: '' });
+    },
+  });
+
+  const updateActivityMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Activity> }) =>
+      activitiesService.update(id, data),
+    onSuccess: () => {
+      refetchActivities();
+      queryClient.invalidateQueries({ queryKey: ['crm-task-summary'] });
+      setEditingActivity(null);
+      setActivityForm({ type: 'NOTE', title: '', description: '', dueDate: '' });
+    },
+  });
+
+  const deleteActivityMutation = useMutation({
+    mutationFn: (id: string) => activitiesService.delete(id),
+    onSuccess: (_data, id) => {
+      refetchActivities();
+      queryClient.invalidateQueries({ queryKey: ['crm-task-summary'] });
+      if (editingActivity && editingActivity.id === id) {
+        setEditingActivity(null);
+        setActivityForm({ type: 'NOTE', title: '', description: '', dueDate: '' });
+      }
     },
   });
 
@@ -101,6 +168,41 @@ function ContactsPage() {
     setDialogOpen(false);
     setEditingContact(null);
     setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', jobTitle: '' });
+  };
+
+  const openActivitiesDialog = (contact: Contact) => {
+    setSelectedContact(contact);
+    setActivitiesDialogOpen(true);
+  };
+
+  const closeActivitiesDialog = () => {
+    setActivitiesDialogOpen(false);
+    setSelectedContact(null);
+    setActivityForm({ type: 'NOTE', title: '', description: '', dueDate: '' });
+     setEditingActivity(null);
+  };
+
+  const handleSubmitActivity = () => {
+    if (!selectedContact || !activityForm.title) return;
+
+    const baseData = {
+      type: activityForm.type,
+      title: activityForm.title,
+      description: activityForm.description || undefined,
+      dueDate: activityForm.dueDate || undefined,
+    };
+
+    if (editingActivity) {
+      updateActivityMutation.mutate({
+        id: editingActivity.id,
+        data: baseData,
+      });
+    } else {
+      createActivityMutation.mutate({
+        ...baseData,
+        contactId: selectedContact.id,
+      });
+    }
   };
 
   const handleSubmit = () => {
@@ -193,6 +295,9 @@ function ContactsPage() {
                   </TableCell>
                   <TableCell>{contact.company}</TableCell>
                   <TableCell align="right">
+                    <IconButton size="small" onClick={() => openActivitiesDialog(contact)}>
+                      <ActivityIcon />
+                    </IconButton>
                     <IconButton size="small" onClick={() => handleOpenDialog(contact)}><EditIcon /></IconButton>
                     <IconButton size="small" color="error" onClick={() => deleteMutation.mutate(contact.id)}>
                       <DeleteIcon />
@@ -224,6 +329,151 @@ function ContactsPage() {
           <Button variant="contained" onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
             {editingContact ? 'Update' : 'Create'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Activities / Timeline Dialog */}
+      <Dialog open={activitiesDialogOpen} onClose={closeActivitiesDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {selectedContact ? `Activities for ${selectedContact.firstName} ${selectedContact.lastName}` : 'Activities'}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            {/* New activity form */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <FormControl fullWidth>
+                <InputLabel>Type</InputLabel>
+                <Select
+                  label="Type"
+                  value={activityForm.type}
+                  onChange={(e) => setActivityForm({ ...activityForm, type: e.target.value as Activity['type'] })}
+                >
+                  <MenuItem value="NOTE">Note</MenuItem>
+                  <MenuItem value="CALL">Call</MenuItem>
+                  <MenuItem value="EMAIL">Email</MenuItem>
+                  <MenuItem value="MEETING">Meeting</MenuItem>
+                  <MenuItem value="TASK">Task</MenuItem>
+                </Select>
+              </FormControl>
+              <TextField
+                label="Title"
+                fullWidth
+                value={activityForm.title}
+                onChange={(e) => setActivityForm({ ...activityForm, title: e.target.value })}
+              />
+              <TextField
+                label="Description"
+                fullWidth
+                multiline
+                minRows={2}
+                value={activityForm.description}
+                onChange={(e) => setActivityForm({ ...activityForm, description: e.target.value })}
+              />
+              <TextField
+                label="Due Date (optional)"
+                type="date"
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+                value={activityForm.dueDate}
+                onChange={(e) => setActivityForm({ ...activityForm, dueDate: e.target.value })}
+              />
+            </Box>
+
+            <Button
+              variant="contained"
+              onClick={handleSubmitActivity}
+              disabled={createActivityMutation.isPending || updateActivityMutation.isPending}
+            >
+              {editingActivity ? 'Update Activity' : 'Add Activity'}
+            </Button>
+            {editingActivity && (
+              <Button
+                onClick={() => {
+                  setEditingActivity(null);
+                  setActivityForm({ type: 'NOTE', title: '', description: '', dueDate: '' });
+                }}
+              >
+                Cancel Edit
+              </Button>
+            )}
+
+            {/* Existing activities */}
+            {activities.length === 0 ? (
+              <Typography color="text.secondary" sx={{ mt: 2 }}>
+                No activities yet for this contact.
+              </Typography>
+            ) : (
+              <List sx={{ mt: 2 }}>
+                {activities.map((activity) => (
+                  <ListItem key={activity.id} alignItems="flex-start">
+                    <ListItemText
+                      primary={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip label={activity.type} size="small" />
+                          <Typography variant="subtitle2">{activity.title}</Typography>
+                        </Box>
+                      }
+                      secondary={
+                        <>
+                          {activity.description && (
+                            <Typography variant="body2" color="text.secondary">
+                              {activity.description}
+                            </Typography>
+                          )}
+                          <Typography variant="caption" color="text.secondary">
+                            {activity.dueDate
+                              ? `Due: ${new Date(activity.dueDate).toLocaleDateString()}`
+                              : `Created: ${new Date(activity.createdAt).toLocaleDateString()}`}
+                          </Typography>
+                        </>
+                      }
+                    />
+                    <ListItemSecondaryAction>
+                      {activity.type === 'TASK' && (
+                        <Chip
+                          label={activity.completed ? 'Done' : 'Mark done'}
+                          color={activity.completed ? 'success' : 'default'}
+                          size="small"
+                          onClick={() =>
+                            updateActivityMutation.mutate({
+                              id: activity.id,
+                              data: { completed: !activity.completed },
+                            })
+                          }
+                        />
+                      )}
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => deleteActivityMutation.mutate(activity.id)}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          setEditingActivity(activity);
+                          setActivityForm({
+                            type: activity.type,
+                            title: activity.title,
+                            description: activity.description || '',
+                            dueDate: activity.dueDate
+                              ? new Date(activity.dueDate).toISOString().slice(0, 10)
+                              : '',
+                          });
+                        }}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeActivitiesDialog}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

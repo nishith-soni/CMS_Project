@@ -6,7 +6,7 @@
 // Displays key metrics and quick access to all modules.
 // Uses MUI Cards for stat display.
 
-import { Card, CardContent, Typography, Box, Paper, Button } from '@mui/material';
+import { Card, CardContent, Typography, Box, Paper, Button, List, ListItem, ListItemText, Chip } from '@mui/material';
 import {
   Article as ArticleIcon,
   People as PeopleIcon,
@@ -14,9 +14,12 @@ import {
   ShoppingCart as ShoppingCartIcon,
   TrendingUp as TrendingUpIcon,
   Add as AddIcon,
+  AssignmentTurnedIn as TasksIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { useQuery } from '@tanstack/react-query';
+import { activitiesService, type Activity } from '../../services/crmService';
 
 // ===========================================
 // Stat Card Component
@@ -72,6 +75,11 @@ function StatCard({ title, value, icon, color, change }: StatCardProps) {
 function DashboardPage() {
   const user = useAuthStore((state) => state.user);
   const navigate = useNavigate();
+
+   const { data: taskSummary } = useQuery({
+    queryKey: ['crm-task-summary'],
+    queryFn: activitiesService.getTaskSummary,
+  });
   
   return (
     <Box>
@@ -117,7 +125,7 @@ function DashboardPage() {
         />
       </Box>
       
-      {/* Quick Actions */}
+      {/* Quick Actions & CRM Tasks */}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 3 }}>
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6" gutterBottom>
@@ -139,6 +147,51 @@ function DashboardPage() {
           </Box>
         </Paper>
         
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TasksIcon fontSize="small" /> Today & Overdue Activities
+          </Typography>
+          <Box sx={{ mb: 2, display: 'flex', gap: 1 }}>
+            <Chip
+              label={`Today: ${taskSummary?.today?.length ?? 0}`}
+              size="small"
+              color="primary"
+            />
+            <Chip
+              label={`Overdue: ${taskSummary?.overdue?.length ?? 0}`}
+              size="small"
+              color={(taskSummary?.overdue?.length ?? 0) > 0 ? 'error' : 'default'}
+            />
+          </Box>
+          {(!taskSummary || (
+            (taskSummary.today?.length ?? 0) === 0 &&
+            (taskSummary.overdue?.length ?? 0) === 0
+          )) ? (
+            <Typography variant="body2" color="text.secondary">
+              No activities scheduled for today.
+            </Typography>
+          ) : (
+            <List dense>
+              {taskSummary?.overdue?.map((task) => (
+                <ListItem key={task.id}>
+                  <ListItemText
+                    primary={task.title}
+                    secondary={`Overdue • Due ${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : ''}`}
+                  />
+                </ListItem>
+              ))}
+              {taskSummary?.today?.map((task) => (
+                <ListItem key={task.id}>
+                  <ListItemText
+                    primary={task.title}
+                    secondary={`Today • Due ${task.dueDate ? new Date(task.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}`}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </Paper>
+
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6" gutterBottom>
             Quick Actions

@@ -15,10 +15,12 @@ import { LeadsController } from './leads/leads.controller';
 import { LeadsService } from './leads/leads.service';
 import { DealsController } from './deals/deals.controller';
 import { DealsService } from './deals/deals.service';
+import { ActivitiesController } from './activities/activities.controller';
+import { ActivitiesService } from './activities/activities.service';
 
 @Module({
-  controllers: [ContactsController, LeadsController, DealsController],
-  providers: [ContactsService, LeadsService, DealsService],
-  exports: [ContactsService, LeadsService, DealsService],
+  controllers: [ContactsController, LeadsController, DealsController, ActivitiesController],
+  providers: [ContactsService, LeadsService, DealsService, ActivitiesService],
+  exports: [ContactsService, LeadsService, DealsService, ActivitiesService],
 })
 export class CrmModule {}
